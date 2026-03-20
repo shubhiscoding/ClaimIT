@@ -5,29 +5,41 @@ import { TokenAccountList } from "@/components/TokenAccountList";
 
 export default function Home() {
   return (
-    <div className="max-w-2xl mx-auto px-4 py-8">
+    <div className="min-h-screen flex flex-col">
       {/* Header */}
-      <header className="flex items-center justify-between mb-10">
-        <div>
-          <h1 className="text-3xl font-black tracking-tight">ClaimIt</h1>
-          <p className="text-sm text-[var(--muted)] mt-0.5">
-            Reclaim rent from empty Solana token accounts
-          </p>
+      <header className="border-b-3 border-[var(--border)] bg-white">
+        <div className="max-w-5xl mx-auto px-6 py-5 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 bg-[var(--accent)] border-2 border-[var(--border)] shadow-brutal-sm flex items-center justify-center">
+              <span className="text-white font-black text-lg">C</span>
+            </div>
+            <div>
+              <h1 className="text-2xl font-black tracking-tight leading-none">
+                ClaimIt
+              </h1>
+              <p className="text-xs text-[var(--muted)] mt-0.5">
+                Reclaim SOL from empty token accounts
+              </p>
+            </div>
+          </div>
+          <WalletButton />
         </div>
-        <WalletButton />
       </header>
 
       {/* Main content */}
-      <main>
+      <main className="flex-1 max-w-5xl mx-auto w-full px-6 py-10">
         <TokenAccountList />
       </main>
 
       {/* Footer */}
-      <footer className="mt-16 pt-6 border-t-2 border-[var(--border)]">
-        <p className="text-xs text-[var(--muted)] text-center">
-          Each empty token account holds ~0.00204 SOL in rent. Closing them
-          sends that SOL back to your wallet.
-        </p>
+      <footer className="border-t-3 border-[var(--border)] bg-white">
+        <div className="max-w-5xl mx-auto px-6 py-4">
+          <p className="text-xs text-[var(--muted)] text-center">
+            Each empty token account holds ~0.00204 SOL in rent. Closing them
+            returns that SOL to your wallet. No fees beyond network transaction
+            costs.
+          </p>
+        </div>
       </footer>
     </div>
   );

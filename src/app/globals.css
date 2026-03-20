@@ -20,29 +20,24 @@ body {
 
 /* Neo-brutalist shadows */
 .shadow-brutal {
-  box-shadow: 4px 4px 0px var(--border);
+  box-shadow: 5px 5px 0px var(--border);
 }
 
 .shadow-brutal-sm {
-  box-shadow: 2px 2px 0px var(--border);
+  box-shadow: 3px 3px 0px var(--border);
 }
 
-.shadow-brutal:hover {
-  box-shadow: 6px 6px 0px var(--border);
-  transform: translate(-2px, -2px);
-}
-
-.shadow-brutal:active {
-  box-shadow: 1px 1px 0px var(--border);
-  transform: translate(2px, 2px);
+/* Tabular numbers for stats */
+.tabular-nums {
+  font-variant-numeric: tabular-nums;
 }
 
 /* Custom scrollbar */
 ::-webkit-scrollbar {
-  width: 8px;
+  width: 6px;
 }
 ::-webkit-scrollbar-track {
-  background: var(--bg);
+  background: transparent;
 }
 ::-webkit-scrollbar-thumb {
   background: var(--border);
