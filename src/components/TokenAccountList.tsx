@@ -87,12 +87,14 @@ export function TokenAccountList() {
           transaction.feePayer = publicKey;
 
           const signature = await sendTransaction(transaction, connection);
+         
           await connection.confirmTransaction(
             { signature, blockhash, lastValidBlockHeight },
             "confirmed"
           );
           success += batch.length;
-        } catch {
+        } catch (error){
+          console.log(error);
           failed += batch.length;
         }
       }
