@@ -1,0 +1,55 @@
+@import "tailwindcss";
+
+:root {
+  --bg: #f5f0e8;
+  --fg: #1a1a1a;
+  --accent: #5b4cff;
+  --accent-hover: #4538cc;
+  --border: #1a1a1a;
+  --card: #ffffff;
+  --success: #22c55e;
+  --danger: #ef4444;
+  --muted: #6b7280;
+}
+
+body {
+  background-color: var(--bg);
+  color: var(--fg);
+  font-family: "Inter", system-ui, -apple-system, sans-serif;
+}
+
+/* Neo-brutalist shadows */
+.shadow-brutal {
+  box-shadow: 4px 4px 0px var(--border);
+}
+
+.shadow-brutal-sm {
+  box-shadow: 2px 2px 0px var(--border);
+}
+
+.shadow-brutal:hover {
+  box-shadow: 6px 6px 0px var(--border);
+  transform: translate(-2px, -2px);
+}
+
+.shadow-brutal:active {
+  box-shadow: 1px 1px 0px var(--border);
+  transform: translate(2px, 2px);
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar {
+  width: 8px;
+}
+::-webkit-scrollbar-track {
+  background: var(--bg);
+}
+::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 0;
+}
+
+/* Override wallet adapter modal styles */
+.wallet-adapter-modal-wrapper {
+  font-family: "Inter", system-ui, -apple-system, sans-serif !important;
+}
