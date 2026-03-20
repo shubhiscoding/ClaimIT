@@ -1,9 +1,9 @@
 "use client";
 
 import { useWallet } from "@solana/wallet-adapter-react";
-import { Connection, Transaction } from "@solana/web3.js";
+import { Connection, PublicKey, Transaction } from "@solana/web3.js";
 import { createCloseAccountInstruction } from "@solana/spl-token";
-import { useState, useMemo, useCallback } from "react";
+import { useState, useMemo, useCallback, useEffect, useRef } from "react";
 
 const RPC_URL =
   process.env.NEXT_PUBLIC_SOLANA_RPC_URL ||
@@ -25,6 +25,10 @@ export function TokenAccountList() {
     success: number;
     failed: number;
   } | null>(null);
+  const [showConfirm, setShowConfirm] = useState(false);
+  const [destinationAddr, setDestinationAddr] = useState("");
+  const [addrError, setAddrError] = useState<string | null>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
 
   const allSelected =
     accounts.length > 0 && selected.size === accounts.length;
@@ -56,9 +60,42 @@ export function TokenAccountList() {
     [accounts.length]
   );
 
+  const openConfirmDialog = useCallback(() => {
+    if (!publicKey || selected.size === 0) return;
+    setDestinationAddr(publicKey.toBase58());
+    setAddrError(null);
+    setShowConfirm(true);
+  }, [publicKey, selected.size]);
+
+  useEffect(() => {
+    if (showConfirm && inputRef.current) {
+      inputRef.current.focus();
+      inputRef.current.select();
+    }
+  }, [showConfirm]);
+
+  const validateAddress = useCallback((addr: string): PublicKey | null => {
+    try {
+      const pk = new PublicKey(addr.trim());
+      if (!PublicKey.isOnCurve(pk)) {
+        setAddrError("Address is not on the ed25519 curve");
+        return null;
+      }
+      setAddrError(null);
+      return pk;
+    } catch {
+      setAddrError("Invalid Solana address");
+      return null;
+    }
+  }, []);
+
   const handleClaim = useCallback(async () => {
     if (!publicKey || selected.size === 0) return;
 
+    const destination = validateAddress(destinationAddr);
+    if (!destination) return;
+
+    setShowConfirm(false);
     setClaiming(true);
     setClaimResult(null);
     let success = 0;
@@ -77,7 +114,7 @@ export function TokenAccountList() {
           transaction.add(
             createCloseAccountInstruction(
               account.pubkey,
-              publicKey,
+              destination,
               publicKey
             )
           );
@@ -108,7 +145,7 @@ export function TokenAccountList() {
     } finally {
       setClaiming(false);
     }
-  }, [publicKey, selected, accounts, connection, sendTransaction, refetch]);
+  }, [publicKey, selected, accounts, connection, sendTransaction, refetch, destinationAddr, validateAddress]);
 
   // ── Not connected ──
   if (!publicKey) {
@@ -266,7 +303,7 @@ export function TokenAccountList() {
         </button>
 
         <button
-          onClick={handleClaim}
+          onClick={openConfirmDialog}
           disabled={selected.size === 0 || claiming}
           className="border-2 border-[var(--border)] bg-[var(--accent)] text-white px-8 py-2.5 font-bold text-base shadow-brutal-sm transition-all cursor-pointer hover:bg-[var(--accent-hover)] active:shadow-none active:translate-x-[2px] active:translate-y-[2px] disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-[var(--accent)] disabled:active:shadow-brutal-sm disabled:active:translate-x-0 disabled:active:translate-y-0"
         >
@@ -327,6 +364,110 @@ export function TokenAccountList() {
           );
         })}
       </div>
+
+      {/* Confirmation Modal */}
+      {showConfirm && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40"
+          onClick={() => setShowConfirm(false)}
+        >
+          <div
+            className="border-3 border-[var(--border)] bg-white shadow-brutal w-full max-w-lg mx-4"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Modal header */}
+            <div className="flex items-center justify-between border-b-3 border-[var(--border)] px-6 py-4">
+              <h3 className="text-lg font-black">Confirm Claim</h3>
+              <button
+                onClick={() => setShowConfirm(false)}
+                className="w-8 h-8 border-2 border-[var(--border)] flex items-center justify-center hover:bg-gray-100 cursor-pointer font-bold text-sm"
+              >
+                X
+              </button>
+            </div>
+
+            {/* Modal body */}
+            <div className="px-6 py-6 space-y-5">
+              {/* Summary */}
+              <div className="border-2 border-dashed border-gray-300 p-4 bg-[var(--bg)]">
+                <div className="flex justify-between items-center mb-2">
+                  <span className="text-sm text-[var(--muted)]">Accounts to close</span>
+                  <span className="font-bold">{selected.size}</span>
+                </div>
+                <div className="flex justify-between items-center">
+                  <span className="text-sm text-[var(--muted)]">SOL to reclaim</span>
+                  <span className="font-black text-xl text-[var(--accent)] tabular-nums">
+                    {totalClaimable.toFixed(6)} SOL
+                  </span>
+                </div>
+              </div>
+
+              {/* Destination address */}
+              <div>
+                <label className="block text-sm font-semibold mb-2">
+                  Destination Wallet
+                </label>
+                <p className="text-xs text-[var(--muted)] mb-2">
+                  The reclaimed SOL will be sent to this address. Defaults to your connected wallet.
+                </p>
+                <input
+                  ref={inputRef}
+                  type="text"
+                  value={destinationAddr}
+                  onChange={(e) => {
+                    setDestinationAddr(e.target.value);
+                    setAddrError(null);
+                  }}
+                  spellCheck={false}
+                  className={`w-full border-2 px-4 py-3 font-mono text-sm outline-none transition-colors ${
+                    addrError
+                      ? "border-red-400 bg-red-50"
+                      : "border-[var(--border)] bg-white focus:border-[var(--accent)]"
+                  }`}
+                  placeholder="Solana wallet address..."
+                />
+                {addrError && (
+                  <p className="text-red-500 text-xs mt-1.5 font-medium">{addrError}</p>
+                )}
+                {publicKey && destinationAddr.trim() !== publicKey.toBase58() && !addrError && destinationAddr.trim().length > 0 && (
+                  <p className="text-yellow-600 text-xs mt-1.5 font-medium">
+                    Sending to a different wallet than the one connected.
+                  </p>
+                )}
+              </div>
+
+              {/* Reset to connected wallet */}
+              {publicKey && destinationAddr.trim() !== publicKey.toBase58() && (
+                <button
+                  onClick={() => {
+                    setDestinationAddr(publicKey.toBase58());
+                    setAddrError(null);
+                  }}
+                  className="text-sm text-[var(--accent)] font-semibold hover:underline cursor-pointer"
+                >
+                  Reset to connected wallet
+                </button>
+              )}
+            </div>
+
+            {/* Modal footer */}
+            <div className="flex items-center gap-3 border-t-3 border-[var(--border)] px-6 py-4">
+              <button
+                onClick={() => setShowConfirm(false)}
+                className="flex-1 border-2 border-[var(--border)] bg-white px-4 py-3 font-semibold shadow-brutal-sm transition-all cursor-pointer hover:bg-gray-50 active:shadow-none active:translate-x-[2px] active:translate-y-[2px]"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleClaim}
+                className="flex-1 border-2 border-[var(--border)] bg-[var(--accent)] text-white px-4 py-3 font-bold shadow-brutal-sm transition-all cursor-pointer hover:bg-[var(--accent-hover)] active:shadow-none active:translate-x-[2px] active:translate-y-[2px]"
+              >
+                Confirm & Claim
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
