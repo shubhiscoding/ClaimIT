@@ -16,6 +16,7 @@ import { StepSelectAccounts } from "./StepSelectAccounts";
 // ── Types ──
 
 export type RecoveryStep =
+  | "LANDING"
   | "CONNECT_COMPROMISED"
   | "CONNECT_FUNDING"
   | "SELECT"
@@ -88,7 +89,7 @@ function reducer(state: RecoveryState, action: Action): RecoveryState {
 }
 
 const initialState: RecoveryState = {
-  step: "CONNECT_COMPROMISED",
+  step: "LANDING",
   compromisedPublicKey: null,
   selectedTokens: new Set(),
   selectedEmpty: new Set(),
@@ -387,6 +388,9 @@ export function FundRecoveryFlow() {
   // ── Back navigation ──
   const handleBack = useCallback(() => {
     switch (state.step) {
+      case "CONNECT_COMPROMISED":
+        dispatch({ type: "SET_STEP", step: "LANDING" });
+        break;
       case "CONNECT_FUNDING":
         dispatch({ type: "RESET" });
         clearWallets();
@@ -432,6 +436,7 @@ export function FundRecoveryFlow() {
 
   // Steps that can go back
   const canGoBack =
+    state.step === "CONNECT_COMPROMISED" ||
     state.step === "CONNECT_FUNDING" ||
     state.step === "SELECT" ||
     state.step === "SIGN_FUNDING" ||
@@ -463,6 +468,74 @@ export function FundRecoveryFlow() {
             dispatch({ type: "RESET" });
           }}
         />
+      )}
+
+      {/* ── Landing: Intro / Requirements ── */}
+      {state.step === "LANDING" && (
+        <div className="flex flex-col items-center justify-center py-16 px-4">
+          <div className="border-3 border-[var(--border)] bg-white shadow-brutal p-8 md:p-12 max-w-2xl w-full">
+            <div className="flex items-center justify-center mb-8">
+              <div className="w-16 h-16 bg-[var(--accent)]/10 border-3 border-[var(--border)] shadow-brutal-sm flex items-center justify-center">
+                <svg className="w-8 h-8 text-[var(--accent)]" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75L11.25 15 15 9.75m-3-7.036A11.959 11.959 0 013.598 6 11.99 11.99 0 003 9.749c0 5.592 3.824 10.29 9 11.623 5.176-1.332 9-6.03 9-11.622 0-1.31-.21-2.571-.598-3.751h-.152c-3.196 0-6.1-1.248-8.25-3.285z" />
+                </svg>
+              </div>
+            </div>
+
+            <h1 className="text-3xl md:text-4xl font-black text-center mb-6">
+              Recover Funds from a Compromised Wallet
+            </h1>
+
+            <div className="space-y-6">
+              {/* Requirements */}
+              <div className="border-2 border-dashed border-gray-300 p-5 bg-[var(--bg)]">
+                <h3 className="font-bold text-sm uppercase tracking-wide text-[var(--muted)] mb-3">
+                  What You Need
+                </h3>
+                <ul className="space-y-2">
+                  <li className="flex items-start gap-3 text-sm">
+                    <span className="w-5 h-5 border-2 border-[var(--border)] bg-[var(--accent)] text-white flex items-center justify-center flex-shrink-0 text-xs font-bold mt-0.5">1</span>
+                    <span>Access to the <strong>compromised wallet</strong> via your browser extension</span>
+                  </li>
+                  <li className="flex items-start gap-3 text-sm">
+                    <span className="w-5 h-5 border-2 border-[var(--border)] bg-[var(--accent)] text-white flex items-center justify-center flex-shrink-0 text-xs font-bold mt-0.5">2</span>
+                    <span>A separate <strong>safe wallet</strong> with some SOL in it to cover gas fees</span>
+                  </li>
+                </ul>
+              </div>
+
+              {/* What you get */}
+              <div className="border-2 border-dashed border-green-300 p-5 bg-green-50/50">
+                <h3 className="font-bold text-sm uppercase tracking-wide text-green-700 mb-3">
+                  What You Get
+                </h3>
+                <ul className="space-y-2">
+                  <li className="flex items-start gap-3 text-sm">
+                    <svg className="w-5 h-5 text-green-600 flex-shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                    <span>Recover <strong>all tokens</strong> from the compromised wallet to your safe wallet</span>
+                  </li>
+                  <li className="flex items-start gap-3 text-sm">
+                    <svg className="w-5 h-5 text-green-600 flex-shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                    <span>Reclaim <strong>rent</strong> from all token accounts in the compromised wallet</span>
+                  </li>
+                </ul>
+              </div>
+            </div>
+
+            <div className="mt-8 flex justify-center">
+              <button
+                onClick={() => dispatch({ type: "SET_STEP", step: "CONNECT_COMPROMISED" })}
+                className="border-2 border-[var(--border)] bg-[var(--accent)] text-white px-10 py-4 font-black text-lg shadow-brutal-sm transition-all cursor-pointer hover:bg-[var(--accent-hover)] active:shadow-none active:translate-x-[2px] active:translate-y-[2px]"
+              >
+                Proceed
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* ── Step 1: Connect Compromised Wallet ── */}
