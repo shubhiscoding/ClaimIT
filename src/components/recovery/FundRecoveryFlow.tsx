@@ -507,12 +507,20 @@ export function FundRecoveryFlow() {
                 </p>
                 <p className="font-mono text-sm">{publicKey.toBase58()}</p>
               </div>
-              <button
-                onClick={handleLockCompromised}
-                className="border-2 border-[var(--border)] bg-red-500 text-white px-8 py-3 font-bold text-lg shadow-brutal-sm transition-all cursor-pointer hover:bg-red-600 active:shadow-none active:translate-x-[2px] active:translate-y-[2px]"
-              >
-                Lock in as Compromised Wallet
-              </button>
+              <div className="flex items-center gap-3">
+                <button
+                  onClick={handleLockCompromised}
+                  className="border-2 border-[var(--border)] bg-red-500 text-white px-8 py-3 font-bold text-lg shadow-brutal-sm transition-all cursor-pointer hover:bg-red-600 active:shadow-none active:translate-x-[2px] active:translate-y-[2px]"
+                >
+                  Lock in as Compromised Wallet
+                </button>
+                <button
+                  onClick={disconnect}
+                  className="border-2 border-[var(--border)] bg-white px-4 py-3 font-semibold text-sm shadow-brutal-sm transition-all cursor-pointer hover:bg-gray-50 active:shadow-none active:translate-x-[1px] active:translate-y-[1px]"
+                >
+                  Disconnect
+                </button>
+              </div>
             </div>
           ) : (
             <button
