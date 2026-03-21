@@ -14,6 +14,75 @@ export interface TokenAccountInfo {
   amount: bigint;
   decimals: number;
   uiAmount: number;
+  name: string | null;
+  symbol: string | null;
+  image: string | null;
+}
+
+interface HeliusAsset {
+  id: string;
+  content?: {
+    metadata?: {
+      name?: string;
+      symbol?: string;
+    };
+    files?: Array<{
+      uri?: string;
+      cdn_uri?: string;
+      mime?: string;
+    }>;
+    links?: {
+      image?: string;
+    };
+  };
+}
+
+async function fetchAssetMetadata(
+  mints: string[]
+): Promise<Map<string, { name: string | null; symbol: string | null; image: string | null }>> {
+  const metadataMap = new Map<string, { name: string | null; symbol: string | null; image: string | null }>();
+
+  if (mints.length === 0) return metadataMap;
+
+  try {
+    // Batch in groups of 1000 (API limit)
+    const batches: string[][] = [];
+    for (let i = 0; i < mints.length; i += 1000) {
+      batches.push(mints.slice(i, i + 1000));
+    }
+
+    for (const batch of batches) {
+      const response = await fetch(RPC_URL, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          jsonrpc: "2.0",
+          id: "get-asset-batch",
+          method: "getAssetBatch",
+          params: { ids: batch },
+        }),
+      });
+
+      const data = await response.json();
+      const results: HeliusAsset[] = data.result ?? [];
+
+      for (const asset of results) {
+        const name = asset.content?.metadata?.name ?? null;
+        const symbol = asset.content?.metadata?.symbol ?? null;
+        const image =
+          asset.content?.links?.image ??
+          asset.content?.files?.[0]?.cdn_uri ??
+          asset.content?.files?.[0]?.uri ??
+          null;
+
+        metadataMap.set(asset.id, { name, symbol, image });
+      }
+    }
+  } catch (err) {
+    console.error("Failed to fetch asset metadata:", err);
+  }
+
+  return metadataMap;
 }
 
 export function useAllTokenAccounts(walletPublicKey: PublicKey | null) {
@@ -39,29 +108,46 @@ export function useAllTokenAccounts(walletPublicKey: PublicKey | null) {
         { programId: TOKEN_PROGRAM_ID }
       );
 
-      const tokens: TokenAccountInfo[] = [];
-      const empty: TokenAccountInfo[] = [];
+      const allEntries: {
+        pubkey: PublicKey;
+        mint: string;
+        amount: bigint;
+        decimals: number;
+        uiAmount: number;
+      }[] = [];
 
       for (const { pubkey, account } of response.value) {
         const parsed = account.data.parsed;
         const info = parsed.info;
-        const mint: string = info.mint;
-        const amount = BigInt(info.tokenAmount.amount);
-        const decimals: number = info.tokenAmount.decimals;
-        const uiAmount: number = info.tokenAmount.uiAmount ?? 0;
-
-        const entry: TokenAccountInfo = {
+        allEntries.push({
           pubkey,
-          mint,
-          amount,
-          decimals,
-          uiAmount,
+          mint: info.mint,
+          amount: BigInt(info.tokenAmount.amount),
+          decimals: info.tokenAmount.decimals,
+          uiAmount: info.tokenAmount.uiAmount ?? 0,
+        });
+      }
+
+      // Fetch metadata for all unique mints
+      const uniqueMints = [...new Set(allEntries.map((e) => e.mint))];
+      const metadataMap = await fetchAssetMetadata(uniqueMints);
+
+      const tokens: TokenAccountInfo[] = [];
+      const empty: TokenAccountInfo[] = [];
+
+      for (const entry of allEntries) {
+        const meta = metadataMap.get(entry.mint);
+        const full: TokenAccountInfo = {
+          ...entry,
+          name: meta?.name ?? null,
+          symbol: meta?.symbol ?? null,
+          image: meta?.image ?? null,
         };
 
-        if (amount > 0n) {
-          tokens.push(entry);
+        if (entry.amount > 0n) {
+          tokens.push(full);
         } else {
-          empty.push(entry);
+          empty.push(full);
         }
       }
 

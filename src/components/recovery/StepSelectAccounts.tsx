@@ -1,6 +1,6 @@
 "use client";
 
-import { Dispatch } from "react";
+import { Dispatch, useState } from "react";
 import { TokenAccountInfo } from "@/hooks/useAllTokenAccounts";
 
 const RENT_PER_ACCOUNT = 0.00203928;
@@ -144,6 +144,18 @@ export function StepSelectAccounts({
             </button>
           </div>
 
+          <div className="border-2 border-blue-200 bg-blue-50 p-3 text-sm text-blue-700 space-y-1">
+            <p>
+              Claiming a token also closes its account, recovering{" "}
+              <strong>~{RENT_PER_ACCOUNT} SOL</strong> rent per account.
+            </p>
+            <p>
+              If your funding wallet doesn&apos;t already have a token account
+              for a mint, one will be created costing{" "}
+              <strong>~{RENT_PER_ACCOUNT} SOL</strong>.
+            </p>
+          </div>
+
           <div className="space-y-2 max-h-[320px] overflow-y-auto pr-1">
             {tokenAccounts.map((account) => {
               const key = account.pubkey.toBase58();
@@ -161,13 +173,22 @@ export function StepSelectAccounts({
                   }`}
                 >
                   <Checkbox checked={isSelected} />
+                  {account.image && (
+                    <img
+                      src={account.image}
+                      alt={account.name ?? "token"}
+                      className="w-9 h-9 border-2 border-[var(--border)] object-cover flex-shrink-0"
+                    />
+                  )}
                   <div className="flex-1 min-w-0">
-                    <p className="font-mono text-sm truncate font-medium">
+                    <div className="flex items-center gap-2">
+                      <p className="font-bold text-sm truncate">
+                        {account.name ?? account.symbol ?? "Unknown Token"}
+                      </p>
+                      <CopyMint mint={account.mint} />
+                    </div>
+                    <p className="font-mono text-xs text-[var(--muted)] mt-1 truncate">
                       {key}
-                    </p>
-                    <p className="text-xs text-[var(--muted)] mt-1">
-                      Mint: {account.mint.slice(0, 8)}...
-                      {account.mint.slice(-8)}
                     </p>
                   </div>
                   <div className="text-right flex-shrink-0 border-l-2 border-dashed border-gray-200 pl-4">
@@ -176,7 +197,12 @@ export function StepSelectAccounts({
                         maximumFractionDigits: account.decimals,
                       })}
                     </p>
-                    <p className="text-xs text-[var(--muted)]">tokens</p>
+                    <p className="text-xs text-[var(--muted)]">
+                      {account.symbol ?? "tokens"}
+                    </p>
+                    <p className="text-[10px] text-green-600 font-semibold mt-0.5">
+                      + {RENT_PER_ACCOUNT} SOL rent
+                    </p>
                   </div>
                 </button>
               );
@@ -229,13 +255,22 @@ export function StepSelectAccounts({
                   }`}
                 >
                   <Checkbox checked={isSelected} />
+                  {account.image && (
+                    <img
+                      src={account.image}
+                      alt={account.name ?? "token"}
+                      className="w-9 h-9 border-2 border-[var(--border)] object-cover flex-shrink-0"
+                    />
+                  )}
                   <div className="flex-1 min-w-0">
-                    <p className="font-mono text-sm truncate font-medium">
+                    <div className="flex items-center gap-2">
+                      <p className="font-bold text-sm truncate">
+                        {account.name ?? account.symbol ?? "Unknown Token"}
+                      </p>
+                      <CopyMint mint={account.mint} />
+                    </div>
+                    <p className="font-mono text-xs text-[var(--muted)] mt-1 truncate">
                       {key}
-                    </p>
-                    <p className="text-xs text-[var(--muted)] mt-1">
-                      Mint: {account.mint.slice(0, 8)}...
-                      {account.mint.slice(-8)}
                     </p>
                   </div>
                   <div className="text-right flex-shrink-0 border-l-2 border-dashed border-gray-200 pl-4">
@@ -285,6 +320,43 @@ export function StepSelectAccounts({
         </div>
       </div>
     </div>
+  );
+}
+
+function CopyMint({ mint }: { mint: string }) {
+  const [copied, setCopied] = useState(false);
+  const short = mint.slice(0, 4) + "..." + mint.slice(-4);
+
+  return (
+    <button
+      onClick={(e) => {
+        e.stopPropagation();
+        navigator.clipboard.writeText(mint);
+        setCopied(true);
+        setTimeout(() => setCopied(false), 1500);
+      }}
+      className="flex items-center gap-1 text-[10px] font-mono text-[var(--muted)] hover:text-[var(--fg)] transition-colors cursor-pointer flex-shrink-0"
+      title={mint}
+    >
+      {short}
+      <svg
+        className="w-2.5 h-2.5"
+        fill="none"
+        viewBox="0 0 24 24"
+        stroke="currentColor"
+        strokeWidth={2}
+      >
+        {copied ? (
+          <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+        ) : (
+          <path
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"
+          />
+        )}
+      </svg>
+    </button>
   );
 }
 

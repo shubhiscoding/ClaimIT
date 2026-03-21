@@ -35,7 +35,7 @@ interface RecoveryState {
   compromisedPublicKey: PublicKey | null;
   selectedTokens: Set<string>;
   selectedEmpty: Set<string>;
-  results: { success: number; failed: number } | null;
+  results: { success: number; failed: number; signatures: string[] } | null;
 }
 
 type Action =
@@ -47,7 +47,7 @@ type Action =
   | { type: "DESELECT_ALL_TOKENS" }
   | { type: "SELECT_ALL_EMPTY"; pubkeys: string[] }
   | { type: "DESELECT_ALL_EMPTY" }
-  | { type: "SET_RESULTS"; results: { success: number; failed: number } }
+  | { type: "SET_RESULTS"; results: { success: number; failed: number; signatures: string[] } }
   | { type: "RESET" };
 
 function reducer(state: RecoveryState, action: Action): RecoveryState {
@@ -100,7 +100,7 @@ const initialState: RecoveryState = {
 // ── Component ──
 
 export function FundRecoveryFlow() {
-  const { publicKey, signTransaction } = useWallet();
+  const { publicKey, signTransaction, disconnect } = useWallet();
   const { setVisible } = useWalletModal();
   const [state, dispatch] = useReducer(reducer, initialState);
   const { buildTransactions, connection } = useRecoveryTransactions();
@@ -263,6 +263,7 @@ export function FundRecoveryFlow() {
         // Send all fully signed transactions
         let success = 0;
         let failed = 0;
+        const signatures: string[] = [];
 
         for (let i = 0; i < fullySigned.length; i++) {
           setProgress({ current: i + 1, total: fullySigned.length });
@@ -279,6 +280,7 @@ export function FundRecoveryFlow() {
               "confirmed"
             );
 
+            signatures.push(signature);
             success++;
           } catch (err) {
             console.error(`Transaction ${i + 1} failed:`, err);
@@ -287,7 +289,7 @@ export function FundRecoveryFlow() {
         }
 
         compromisedSignTriggered.current = false;
-        dispatch({ type: "SET_RESULTS", results: { success, failed } });
+        dispatch({ type: "SET_RESULTS", results: { success, failed, signatures } });
       } catch (err) {
         console.error("Compromised sign error:", err);
         compromisedSignTriggered.current = false;
@@ -326,6 +328,15 @@ export function FundRecoveryFlow() {
           selectedTokens={state.selectedTokens}
           selectedEmpty={state.selectedEmpty}
           loading={accountsLoading}
+          onReset={() => {
+            fundingWalletRef.current = null;
+            dispatch({ type: "RESET" });
+          }}
+          onDisconnect={() => {
+            fundingWalletRef.current = null;
+            disconnect();
+            dispatch({ type: "RESET" });
+          }}
         />
       )}
 
@@ -504,6 +515,39 @@ export function FundRecoveryFlow() {
                 {state.results.success > 1 ? "s" : ""} completed. Tokens and
                 rent have been sent to your funding wallet.
               </p>
+            </div>
+          )}
+          {state.results.signatures.length > 0 && (
+            <div className="border-3 border-[var(--border)] bg-white p-6 shadow-brutal">
+              <h4 className="font-bold text-sm uppercase tracking-wide text-[var(--muted)] mb-3">
+                Transaction Hashes
+              </h4>
+              <div className="space-y-2">
+                {state.results.signatures.map((sig, i) => (
+                  <div
+                    key={sig}
+                    className="flex items-center gap-3 border-2 border-[var(--border)] bg-[var(--bg)] p-3"
+                  >
+                    <span className="text-xs font-bold text-[var(--muted)] w-6">
+                      {i + 1}.
+                    </span>
+                    <a
+                      href={`https://solscan.io/tx/${sig}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="font-mono text-xs text-[var(--accent)] hover:underline truncate flex-1"
+                    >
+                      {sig}
+                    </a>
+                    <button
+                      onClick={() => navigator.clipboard.writeText(sig)}
+                      className="border-2 border-[var(--border)] bg-white px-2 py-1 text-xs font-semibold cursor-pointer hover:bg-gray-50 flex-shrink-0"
+                    >
+                      Copy
+                    </button>
+                  </div>
+                ))}
+              </div>
             </div>
           )}
           {state.results.failed > 0 && (
