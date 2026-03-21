@@ -168,3 +168,20 @@ export function useAllTokenAccounts(walletPublicKey: PublicKey | null) {
 
   return { tokenAccounts, emptyAccounts, loading, error, refetch: fetchAccounts };
 }
+
+/** Lightweight fetch — returns just the set of mint addresses a wallet already holds token accounts for. */
+export async function fetchFundingMints(
+  walletPublicKey: PublicKey
+): Promise<Set<string>> {
+  const connection = new Connection(RPC_URL, "confirmed");
+  const response = await connection.getParsedTokenAccountsByOwner(
+    walletPublicKey,
+    { programId: TOKEN_PROGRAM_ID }
+  );
+
+  const mints = new Set<string>();
+  for (const { account } of response.value) {
+    mints.add(account.data.parsed.info.mint);
+  }
+  return mints;
+}

@@ -7,6 +7,7 @@ import { useReducer, useCallback, useRef, useState, useEffect } from "react";
 import {
   useAllTokenAccounts,
   TokenAccountInfo,
+  fetchFundingMints,
 } from "@/hooks/useAllTokenAccounts";
 import { useRecoveryTransactions } from "@/hooks/useRecoveryTransactions";
 import { SummaryBar } from "./SummaryBar";
@@ -115,6 +116,7 @@ export function FundRecoveryFlow() {
   const [claimError, setClaimError] = useState<string | null>(null);
   const [isSending, setIsSending] = useState(false);
   const [progress, setProgress] = useState({ current: 0, total: 0 });
+  const [fundingMints, setFundingMints] = useState<Set<string>>(new Set());
 
   // Fetch accounts for the compromised wallet
   const {
@@ -126,13 +128,21 @@ export function FundRecoveryFlow() {
   } = useAllTokenAccounts(state.compromisedPublicKey);
 
   // ── Step 1: Lock in funding wallet ──
-  const handleLockFunding = useCallback(() => {
+  const handleLockFunding = useCallback(async () => {
     if (!publicKey || !signTransaction) return;
 
     fundingWalletRef.current = {
       publicKey,
       signTransaction,
     };
+
+    // Fetch existing mints on the funding wallet
+    try {
+      const mints = await fetchFundingMints(publicKey);
+      setFundingMints(mints);
+    } catch (err) {
+      console.error("Failed to fetch funding wallet mints:", err);
+    }
 
     dispatch({ type: "SET_STEP", step: "CONNECT_COMPROMISED" });
   }, [publicKey, signTransaction]);
@@ -328,6 +338,7 @@ export function FundRecoveryFlow() {
           selectedTokens={state.selectedTokens}
           selectedEmpty={state.selectedEmpty}
           loading={accountsLoading}
+          fundingMints={fundingMints}
           onReset={() => {
             fundingWalletRef.current = null;
             dispatch({ type: "RESET" });
@@ -429,6 +440,7 @@ export function FundRecoveryFlow() {
           isClaiming={false}
           claimError={claimError}
           progress={{ current: 0, total: 0 }}
+          fundingMints={fundingMints}
         />
       )}
 

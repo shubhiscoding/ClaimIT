@@ -27,6 +27,7 @@ interface Props {
   isClaiming: boolean;
   claimError: string | null;
   progress: { current: number; total: number };
+  fundingMints: Set<string>;
 }
 
 export function StepSelectAccounts({
@@ -43,6 +44,7 @@ export function StepSelectAccounts({
   isClaiming,
   claimError,
   progress,
+  fundingMints,
 }: Props) {
   const allTokensSelected =
     tokenAccounts.length > 0 && selectedTokens.size === tokenAccounts.length;
@@ -160,6 +162,7 @@ export function StepSelectAccounts({
             {tokenAccounts.map((account) => {
               const key = account.pubkey.toBase58();
               const isSelected = selectedTokens.has(key);
+              const fundingHasAta = fundingMints.has(account.mint);
               return (
                 <button
                   key={key}
@@ -200,9 +203,15 @@ export function StepSelectAccounts({
                     <p className="text-xs text-[var(--muted)]">
                       {account.symbol ?? "tokens"}
                     </p>
-                    <p className="text-[10px] text-green-600 font-semibold mt-0.5">
-                      + {RENT_PER_ACCOUNT} SOL rent
-                    </p>
+                    {fundingHasAta ? (
+                      <p className="text-[10px] text-green-600 font-semibold mt-0.5">
+                        + {RENT_PER_ACCOUNT} SOL rent
+                      </p>
+                    ) : (
+                      <p className="text-[10px] text-[var(--muted)] mt-0.5">
+                        rent offset by new ATA
+                      </p>
+                    )}
                   </div>
                 </button>
               );

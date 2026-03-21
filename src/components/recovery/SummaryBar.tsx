@@ -14,6 +14,7 @@ interface SummaryBarProps {
   selectedTokens: Set<string>;
   selectedEmpty: Set<string>;
   loading: boolean;
+  fundingMints: Set<string>;
   onReset: () => void;
   onDisconnect: () => void;
 }
@@ -26,11 +27,29 @@ export function SummaryBar({
   selectedTokens,
   selectedEmpty,
   loading,
+  fundingMints,
   onReset,
   onDisconnect,
 }: SummaryBarProps) {
-  const totalRent = emptyAccounts.length * RENT_PER_ACCOUNT;
-  const selectedRent = selectedEmpty.size * RENT_PER_ACCOUNT;
+  // Rent from empty accounts
+  const emptyRent = emptyAccounts.length * RENT_PER_ACCOUNT;
+  const selectedEmptyRent = selectedEmpty.size * RENT_PER_ACCOUNT;
+
+  // Rent from token accounts: closing yields rent, but creating ATA costs rent if funding wallet doesn't have it
+  const tokenRentNet = tokenAccounts.reduce((acc, a) => {
+    const hasAta = fundingMints.has(a.mint);
+    return acc + RENT_PER_ACCOUNT - (hasAta ? 0 : RENT_PER_ACCOUNT);
+  }, 0);
+
+  const selectedTokenRentNet = tokenAccounts
+    .filter((a) => selectedTokens.has(a.pubkey.toBase58()))
+    .reduce((acc, a) => {
+      const hasAta = fundingMints.has(a.mint);
+      return acc + RENT_PER_ACCOUNT - (hasAta ? 0 : RENT_PER_ACCOUNT);
+    }, 0);
+
+  const totalRent = emptyRent + tokenRentNet;
+  const selectedRent = selectedEmptyRent + selectedTokenRentNet;
 
   const addr = compromisedPublicKey.toBase58();
   const shortAddr = addr.slice(0, 4) + "..." + addr.slice(-4);
