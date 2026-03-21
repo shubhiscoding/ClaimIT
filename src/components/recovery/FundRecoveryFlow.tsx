@@ -16,14 +16,12 @@ import { StepSelectAccounts } from "./StepSelectAccounts";
 // ── Types ──
 
 export type RecoveryStep =
-  | "CONNECT_FUNDING"
   | "CONNECT_COMPROMISED"
+  | "CONNECT_FUNDING"
   | "SELECT"
-  | "SWITCH_TO_FUNDING"
   | "SIGN_FUNDING"
   | "SWITCH_TO_COMPROMISED"
   | "SIGN_COMPROMISED"
-  | "SENDING"
   | "DONE";
 
 interface FundingWalletData {
@@ -48,7 +46,10 @@ type Action =
   | { type: "DESELECT_ALL_TOKENS" }
   | { type: "SELECT_ALL_EMPTY"; pubkeys: string[] }
   | { type: "DESELECT_ALL_EMPTY" }
-  | { type: "SET_RESULTS"; results: { success: number; failed: number; signatures: string[] } }
+  | {
+      type: "SET_RESULTS";
+      results: { success: number; failed: number; signatures: string[] };
+    }
   | { type: "RESET" };
 
 function reducer(state: RecoveryState, action: Action): RecoveryState {
@@ -56,11 +57,7 @@ function reducer(state: RecoveryState, action: Action): RecoveryState {
     case "SET_STEP":
       return { ...state, step: action.step };
     case "SET_COMPROMISED":
-      return {
-        ...state,
-        compromisedPublicKey: action.publicKey,
-        step: "SELECT",
-      };
+      return { ...state, compromisedPublicKey: action.publicKey };
     case "TOGGLE_TOKEN": {
       const next = new Set(state.selectedTokens);
       if (next.has(action.pubkey)) next.delete(action.pubkey);
@@ -91,12 +88,41 @@ function reducer(state: RecoveryState, action: Action): RecoveryState {
 }
 
 const initialState: RecoveryState = {
-  step: "CONNECT_FUNDING",
+  step: "CONNECT_COMPROMISED",
   compromisedPublicKey: null,
   selectedTokens: new Set(),
   selectedEmpty: new Set(),
   results: null,
 };
+
+// ── Persistence helpers ──
+
+const STORAGE_KEY = "claimit_recovery_wallets";
+
+function saveWallets(compromised: string, funding: string) {
+  try {
+    localStorage.setItem(
+      STORAGE_KEY,
+      JSON.stringify({ compromised, funding })
+    );
+  } catch {}
+}
+
+function loadWallets(): { compromised: string; funding: string } | null {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (parsed.compromised && parsed.funding) return parsed;
+  } catch {}
+  return null;
+}
+
+function clearWallets() {
+  try {
+    localStorage.removeItem(STORAGE_KEY);
+  } catch {}
+}
 
 // ── Component ──
 
@@ -118,6 +144,43 @@ export function FundRecoveryFlow() {
   const [progress, setProgress] = useState({ current: 0, total: 0 });
   const [fundingMints, setFundingMints] = useState<Set<string>>(new Set());
 
+  // ── Restore from localStorage on mount ──
+  const restoredRef = useRef(false);
+  useEffect(() => {
+    if (restoredRef.current) return;
+    restoredRef.current = true;
+
+    const saved = loadWallets();
+    if (!saved) return;
+
+    try {
+      const compromisedPk = new PublicKey(saved.compromised);
+      const fundingPk = new PublicKey(saved.funding);
+
+      dispatch({ type: "SET_COMPROMISED", publicKey: compromisedPk });
+
+      // If the currently connected wallet matches the funding wallet, lock it in
+      if (
+        publicKey &&
+        signTransaction &&
+        publicKey.toBase58() === saved.funding
+      ) {
+        fundingWalletRef.current = { publicKey: fundingPk, signTransaction };
+        dispatch({ type: "SET_STEP", step: "SELECT" });
+
+        // Fetch funding mints
+        fetchFundingMints(fundingPk)
+          .then(setFundingMints)
+          .catch(() => {});
+      } else {
+        // User needs to connect funding wallet — we know the compromised wallet
+        dispatch({ type: "SET_STEP", step: "CONNECT_FUNDING" });
+      }
+    } catch {
+      clearWallets();
+    }
+  }, [publicKey, signTransaction]);
+
   // Fetch accounts for the compromised wallet
   const {
     tokenAccounts,
@@ -127,16 +190,27 @@ export function FundRecoveryFlow() {
     refetch,
   } = useAllTokenAccounts(state.compromisedPublicKey);
 
-  // ── Step 1: Lock in funding wallet ──
+  // ── Step 1: Lock in compromised wallet ──
+  const handleLockCompromised = useCallback(() => {
+    if (!publicKey) return;
+    dispatch({ type: "SET_COMPROMISED", publicKey });
+    dispatch({ type: "SET_STEP", step: "CONNECT_FUNDING" });
+  }, [publicKey]);
+
+  // ── Step 2: Lock in funding wallet ──
   const handleLockFunding = useCallback(async () => {
-    if (!publicKey || !signTransaction) return;
+    if (!publicKey || !signTransaction || !state.compromisedPublicKey) return;
+    if (publicKey.toBase58() === state.compromisedPublicKey.toBase58()) return;
 
-    fundingWalletRef.current = {
-      publicKey,
-      signTransaction,
-    };
+    fundingWalletRef.current = { publicKey, signTransaction };
 
-    // Fetch existing mints on the funding wallet
+    // Persist both wallets
+    saveWallets(
+      state.compromisedPublicKey.toBase58(),
+      publicKey.toBase58()
+    );
+
+    // Fetch funding mints
     try {
       const mints = await fetchFundingMints(publicKey);
       setFundingMints(mints);
@@ -144,18 +218,8 @@ export function FundRecoveryFlow() {
       console.error("Failed to fetch funding wallet mints:", err);
     }
 
-    dispatch({ type: "SET_STEP", step: "CONNECT_COMPROMISED" });
-  }, [publicKey, signTransaction]);
-
-  // ── Step 2: Detect compromised wallet ──
-  useEffect(() => {
-    if (state.step !== "CONNECT_COMPROMISED") return;
-    if (!publicKey || !fundingWalletRef.current) return;
-
-    if (publicKey.toBase58() !== fundingWalletRef.current.publicKey.toBase58()) {
-      dispatch({ type: "SET_COMPROMISED", publicKey });
-    }
-  }, [publicKey, state.step]);
+    dispatch({ type: "SET_STEP", step: "SELECT" });
+  }, [publicKey, signTransaction, state.compromisedPublicKey]);
 
   // ── Derived data ──
   const selectedTokenAccountsList: TokenAccountInfo[] = tokenAccounts.filter(
@@ -168,7 +232,7 @@ export function FundRecoveryFlow() {
   const hasSelections =
     state.selectedTokens.size > 0 || state.selectedEmpty.size > 0;
 
-  // ── Step 3: User clicks "Claim" → build txs → ask to switch to funding ──
+  // ── Step 3: User clicks "Claim" → build txs → sign with funding (already connected) ──
   const handleClaim = useCallback(async () => {
     if (!fundingWalletRef.current || !state.compromisedPublicKey) return;
 
@@ -184,7 +248,8 @@ export function FundRecoveryFlow() {
 
       builtTxsRef.current = txs;
       fundingSignedTxsRef.current = [];
-      dispatch({ type: "SET_STEP", step: "SWITCH_TO_FUNDING" });
+      // Funding wallet should already be connected — go straight to signing
+      dispatch({ type: "SET_STEP", step: "SIGN_FUNDING" });
     } catch (err) {
       console.error("Build error:", err);
       setClaimError(
@@ -198,23 +263,16 @@ export function FundRecoveryFlow() {
     selectedEmptyAccountsList,
   ]);
 
-  // ── Detect switch to funding wallet ──
-  useEffect(() => {
-    if (state.step !== "SWITCH_TO_FUNDING") return;
-    if (!publicKey || !fundingWalletRef.current) return;
-
-    if (publicKey.toBase58() === fundingWalletRef.current.publicKey.toBase58()) {
-      dispatch({ type: "SET_STEP", step: "SIGN_FUNDING" });
-    }
-  }, [publicKey, state.step]);
-
-  // ── Auto-sign with funding wallet when detected ──
+  // ── Auto-sign with funding wallet ──
   const fundingSignTriggered = useRef(false);
   useEffect(() => {
     if (state.step !== "SIGN_FUNDING") return;
     if (fundingSignTriggered.current) return;
     if (!signTransaction || !publicKey || !fundingWalletRef.current) return;
-    if (publicKey.toBase58() !== fundingWalletRef.current.publicKey.toBase58()) return;
+    if (
+      publicKey.toBase58() !== fundingWalletRef.current.publicKey.toBase58()
+    )
+      return;
 
     fundingSignTriggered.current = true;
 
@@ -232,14 +290,16 @@ export function FundRecoveryFlow() {
         console.error("Funding sign error:", err);
         fundingSignTriggered.current = false;
         setClaimError(
-          err instanceof Error ? err.message : "Funding wallet rejected signing"
+          err instanceof Error
+            ? err.message
+            : "Funding wallet rejected signing"
         );
         dispatch({ type: "SET_STEP", step: "SELECT" });
       }
     })();
   }, [state.step, signTransaction, publicKey]);
 
-  // ── Detect switch back to compromised wallet ──
+  // ── Detect switch to compromised wallet ──
   useEffect(() => {
     if (state.step !== "SWITCH_TO_COMPROMISED") return;
     if (!publicKey || !state.compromisedPublicKey) return;
@@ -299,7 +359,10 @@ export function FundRecoveryFlow() {
         }
 
         compromisedSignTriggered.current = false;
-        dispatch({ type: "SET_RESULTS", results: { success, failed, signatures } });
+        dispatch({
+          type: "SET_RESULTS",
+          results: { success, failed, signatures },
+        });
       } catch (err) {
         console.error("Compromised sign error:", err);
         compromisedSignTriggered.current = false;
@@ -313,7 +376,48 @@ export function FundRecoveryFlow() {
         setIsSending(false);
       }
     })();
-  }, [state.step, signTransaction, publicKey, state.compromisedPublicKey, connection]);
+  }, [
+    state.step,
+    signTransaction,
+    publicKey,
+    state.compromisedPublicKey,
+    connection,
+  ]);
+
+  // ── Back navigation ──
+  const handleBack = useCallback(() => {
+    switch (state.step) {
+      case "CONNECT_FUNDING":
+        dispatch({ type: "RESET" });
+        clearWallets();
+        break;
+      case "SELECT":
+        // Go back to connect funding — clear funding ref
+        fundingWalletRef.current = null;
+        setFundingMints(new Set());
+        clearWallets();
+        dispatch({ type: "SET_STEP", step: "CONNECT_FUNDING" });
+        break;
+      case "SIGN_FUNDING":
+      case "SWITCH_TO_COMPROMISED":
+        // Go back to selection
+        builtTxsRef.current = [];
+        fundingSignedTxsRef.current = [];
+        fundingSignTriggered.current = false;
+        dispatch({ type: "SET_STEP", step: "SELECT" });
+        break;
+      case "DONE":
+        // Go back to selection to try again
+        builtTxsRef.current = [];
+        fundingSignedTxsRef.current = [];
+        fundingSignTriggered.current = false;
+        compromisedSignTriggered.current = false;
+        dispatch({ type: "SET_STEP", step: "SELECT" });
+        break;
+      default:
+        break;
+    }
+  }, [state.step]);
 
   // ── Render ──
 
@@ -325,6 +429,14 @@ export function FundRecoveryFlow() {
   const shortCompromised = compromisedAddr
     ? `${compromisedAddr.slice(0, 4)}...${compromisedAddr.slice(-4)}`
     : "";
+
+  // Steps that can go back
+  const canGoBack =
+    state.step === "CONNECT_FUNDING" ||
+    state.step === "SELECT" ||
+    state.step === "SIGN_FUNDING" ||
+    state.step === "SWITCH_TO_COMPROMISED" ||
+    state.step === "DONE";
 
   return (
     <div className="flex-1 max-w-5xl mx-auto w-full px-6 py-8 space-y-8">
@@ -341,17 +453,79 @@ export function FundRecoveryFlow() {
           fundingMints={fundingMints}
           onReset={() => {
             fundingWalletRef.current = null;
+            clearWallets();
             dispatch({ type: "RESET" });
           }}
           onDisconnect={() => {
             fundingWalletRef.current = null;
+            clearWallets();
             disconnect();
             dispatch({ type: "RESET" });
           }}
         />
       )}
 
-      {/* ── Step 1: Connect Funding Wallet ── */}
+      {/* ── Step 1: Connect Compromised Wallet ── */}
+      {state.step === "CONNECT_COMPROMISED" && (
+        <div className="flex flex-col items-center justify-center py-20 text-center">
+          <div className="w-20 h-20 bg-red-50 border-3 border-[var(--border)] shadow-brutal flex items-center justify-center mb-8">
+            <svg
+              className="w-10 h-10 text-red-500"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+              strokeWidth={2}
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126z"
+              />
+            </svg>
+          </div>
+
+          <h2 className="text-3xl font-black mb-3">
+            Connect Compromised Wallet
+          </h2>
+          <p className="text-[var(--muted)] max-w-md mb-3 leading-relaxed">
+            Start by connecting your <strong>compromised wallet</strong>. This
+            is the wallet you want to recover funds from.
+          </p>
+
+          <div className="border-2 border-yellow-400 bg-yellow-50 p-4 max-w-md mb-8 text-left">
+            <p className="text-sm text-yellow-700 leading-relaxed">
+              <strong>Step 1 of 3:</strong> Connect your compromised wallet
+              first. You&apos;ll switch to the funding wallet next.
+            </p>
+          </div>
+
+          {publicKey ? (
+            <div className="space-y-4">
+              <div className="border-2 border-[var(--border)] bg-white p-4 shadow-brutal-sm">
+                <p className="text-xs text-[var(--muted)] mb-1">
+                  Connected wallet
+                </p>
+                <p className="font-mono text-sm">{publicKey.toBase58()}</p>
+              </div>
+              <button
+                onClick={handleLockCompromised}
+                className="border-2 border-[var(--border)] bg-red-500 text-white px-8 py-3 font-bold text-lg shadow-brutal-sm transition-all cursor-pointer hover:bg-red-600 active:shadow-none active:translate-x-[2px] active:translate-y-[2px]"
+              >
+                Lock in as Compromised Wallet
+              </button>
+            </div>
+          ) : (
+            <button
+              onClick={() => setVisible(true)}
+              className="border-2 border-[var(--border)] bg-[var(--accent)] text-white px-8 py-3 font-bold text-lg shadow-brutal-sm transition-all cursor-pointer hover:bg-[var(--accent-hover)] active:shadow-none active:translate-x-[2px] active:translate-y-[2px]"
+            >
+              Connect Wallet
+            </button>
+          )}
+        </div>
+      )}
+
+      {/* ── Step 2: Connect Funding Wallet ── */}
       {state.step === "CONNECT_FUNDING" && (
         <div className="flex flex-col items-center justify-center py-20 text-center">
           <div className="w-20 h-20 bg-green-50 border-3 border-[var(--border)] shadow-brutal flex items-center justify-center mb-8">
@@ -372,18 +546,33 @@ export function FundRecoveryFlow() {
 
           <h2 className="text-3xl font-black mb-3">Connect Funding Wallet</h2>
           <p className="text-[var(--muted)] max-w-md mb-3 leading-relaxed">
-            Start by connecting your <strong>safe wallet</strong>. This wallet
-            will pay gas fees and receive all recovered tokens and rent.
+            Now switch to your <strong>safe wallet</strong>. This wallet will
+            pay gas fees and receive all recovered tokens and rent.
           </p>
 
-          <div className="border-2 border-yellow-400 bg-yellow-50 p-4 max-w-md mb-8 text-left">
+          <div className="border-2 border-yellow-400 bg-yellow-50 p-4 max-w-md mb-4 text-left">
             <p className="text-sm text-yellow-700 leading-relaxed">
-              <strong>Step 1 of 3:</strong> Connect your safe wallet first.
-              You&apos;ll switch to the compromised wallet next.
+              <strong>Step 2 of 3:</strong> Connect your safe funding wallet.
+              You&apos;ll select accounts to recover next.
             </p>
           </div>
 
-          {publicKey ? (
+          <div className="border-2 border-red-200 bg-red-50 p-3 max-w-md mb-8 text-left">
+            <div className="flex items-center gap-2 mb-1">
+              <div className="w-2 h-2 bg-red-500 rounded-full" />
+              <p className="text-xs font-bold text-red-700">
+                Compromised wallet locked
+              </p>
+            </div>
+            <p className="font-mono text-xs text-red-600">
+              {state.compromisedPublicKey?.toBase58()}
+            </p>
+          </div>
+
+          {publicKey &&
+          state.compromisedPublicKey &&
+          publicKey.toBase58() !==
+            state.compromisedPublicKey.toBase58() ? (
             <div className="space-y-4">
               <div className="border-2 border-[var(--border)] bg-white p-4 shadow-brutal-sm">
                 <p className="text-xs text-[var(--muted)] mb-1">
@@ -399,90 +588,119 @@ export function FundRecoveryFlow() {
               </button>
             </div>
           ) : (
-            <button
-              onClick={() => setVisible(true)}
-              className="border-2 border-[var(--border)] bg-[var(--accent)] text-white px-8 py-3 font-bold text-lg shadow-brutal-sm transition-all cursor-pointer hover:bg-[var(--accent-hover)] active:shadow-none active:translate-x-[2px] active:translate-y-[2px]"
-            >
-              Connect Wallet
-            </button>
+            <div className="space-y-4">
+              <div className="border-2 border-[var(--border)] bg-white p-5 shadow-brutal-sm max-w-md">
+                <div className="flex items-center gap-3">
+                  <div className="h-5 w-5 border-2 border-[var(--accent)] border-t-transparent rounded-full animate-spin flex-shrink-0" />
+                  <div className="text-left">
+                    <p className="font-bold text-sm">
+                      Waiting for a different wallet...
+                    </p>
+                    <p className="text-xs text-[var(--muted)] mt-0.5">
+                      Switch to your funding wallet in the wallet extension
+                    </p>
+                  </div>
+                </div>
+              </div>
+            </div>
           )}
-        </div>
-      )}
 
-      {/* ── Step 2: Switch to Compromised Wallet ── */}
-      {state.step === "CONNECT_COMPROMISED" && (
-        <WalletSwitchPrompt
-          title="Switch to Compromised Wallet"
-          description="Open your wallet extension and switch to the compromised wallet. The app will detect the change automatically."
-          targetLabel="Waiting for compromised wallet..."
-          currentPublicKey={publicKey}
-          lockedWallet={{
-            label: "Funding wallet locked",
-            address: fundingWalletRef.current?.publicKey.toBase58() ?? "",
-            color: "green",
-          }}
-        />
+          <div className="mt-6">
+            <button
+              onClick={handleBack}
+              className="border-2 border-[var(--border)] bg-white px-5 py-2 font-semibold text-sm shadow-brutal-sm transition-all cursor-pointer hover:bg-gray-50 active:shadow-none active:translate-x-[1px] active:translate-y-[1px]"
+            >
+              Back
+            </button>
+          </div>
+        </div>
       )}
 
       {/* ── Step 3: Select Accounts ── */}
       {state.step === "SELECT" && (
-        <StepSelectAccounts
-          tokenAccounts={tokenAccounts}
-          emptyAccounts={emptyAccounts}
-          selectedTokens={state.selectedTokens}
-          selectedEmpty={state.selectedEmpty}
-          dispatch={dispatch}
-          loading={accountsLoading}
-          error={accountsError}
-          refetch={refetch}
-          hasSelections={hasSelections}
-          onProceed={handleClaim}
-          isClaiming={false}
-          claimError={claimError}
-          progress={{ current: 0, total: 0 }}
-          fundingMints={fundingMints}
-        />
-      )}
-
-      {/* ── Switch to Funding Wallet for signing ── */}
-      {state.step === "SWITCH_TO_FUNDING" && (
-        <WalletSwitchPrompt
-          title="Switch to Funding Wallet"
-          description={`Switch your wallet back to the funding wallet (${shortFunding}). It needs to sign as the fee payer.`}
-          targetLabel={`Waiting for ${shortFunding}...`}
-          currentPublicKey={publicKey}
-          lockedWallet={{
-            label: "Target wallet",
-            address: fundingAddr ?? "",
-            color: "green",
-          }}
-        />
+        <div className="space-y-4">
+          <button
+            onClick={handleBack}
+            className="flex items-center gap-2 border-2 border-[var(--border)] bg-white px-4 py-2 font-semibold text-sm shadow-brutal-sm transition-all cursor-pointer hover:bg-gray-50 active:shadow-none active:translate-x-[1px] active:translate-y-[1px]"
+          >
+            <svg
+              className="w-4 h-4"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+              strokeWidth={2}
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                d="M10.5 19.5L3 12m0 0l7.5-7.5M3 12h18"
+              />
+            </svg>
+            Change Wallets
+          </button>
+          <StepSelectAccounts
+            tokenAccounts={tokenAccounts}
+            emptyAccounts={emptyAccounts}
+            selectedTokens={state.selectedTokens}
+            selectedEmpty={state.selectedEmpty}
+            dispatch={dispatch}
+            loading={accountsLoading}
+            error={accountsError}
+            refetch={refetch}
+            hasSelections={hasSelections}
+            onProceed={handleClaim}
+            isClaiming={false}
+            claimError={claimError}
+            progress={{ current: 0, total: 0 }}
+            fundingMints={fundingMints}
+          />
+        </div>
       )}
 
       {/* ── Signing with Funding Wallet ── */}
       {state.step === "SIGN_FUNDING" && (
-        <SigningPrompt
-          title="Approve in Funding Wallet"
-          description="Your funding wallet extension should show a signing request. Please approve it."
-          walletLabel="Funding"
-          walletAddress={shortFunding}
-          txCount={builtTxsRef.current.length}
-        />
+        <div>
+          <SigningPrompt
+            title="Approve in Funding Wallet"
+            description="Your funding wallet extension should show a signing request. Please approve it."
+            walletLabel="Funding"
+            walletAddress={shortFunding}
+            txCount={builtTxsRef.current.length}
+          />
+          <div className="flex justify-center mt-4">
+            <button
+              onClick={handleBack}
+              className="border-2 border-[var(--border)] bg-white px-5 py-2 font-semibold text-sm shadow-brutal-sm transition-all cursor-pointer hover:bg-gray-50 active:shadow-none active:translate-x-[1px] active:translate-y-[1px]"
+            >
+              Back to Selection
+            </button>
+          </div>
+        </div>
       )}
 
-      {/* ── Switch back to Compromised Wallet ── */}
+      {/* ── Switch to Compromised Wallet for second sign ── */}
       {state.step === "SWITCH_TO_COMPROMISED" && (
-        <WalletSwitchPrompt
-          title="Switch to Compromised Wallet"
-          description={`Switch your wallet back to the compromised wallet (${shortCompromised}). It needs to authorize the transfers.`}
-          targetLabel={`Waiting for ${shortCompromised}...`}
-          currentPublicKey={publicKey}
-          lockedWallet={{
-            label: "Target wallet",
-            address: compromisedAddr ?? "",
-            color: "red",
-          }}
-        />
+        <div>
+          <WalletSwitchPrompt
+            title="Switch to Compromised Wallet"
+            description={`Switch your wallet to the compromised wallet (${shortCompromised}). It needs to authorize the transfers.`}
+            targetLabel={`Waiting for ${shortCompromised}...`}
+            currentPublicKey={publicKey}
+            lockedWallet={{
+              label: "Target wallet",
+              address: compromisedAddr ?? "",
+              color: "red",
+            }}
+          />
+          <div className="flex justify-center mt-4">
+            <button
+              onClick={handleBack}
+              className="border-2 border-[var(--border)] bg-white px-5 py-2 font-semibold text-sm shadow-brutal-sm transition-all cursor-pointer hover:bg-gray-50 active:shadow-none active:translate-x-[1px] active:translate-y-[1px]"
+            >
+              Back to Selection
+            </button>
+          </div>
+        </div>
       )}
 
       {/* ── Signing with Compromised Wallet + Sending ── */}
@@ -502,7 +720,8 @@ export function FundRecoveryFlow() {
                 <div className="h-6 w-6 border-2 border-[var(--accent)] border-t-transparent rounded-full animate-spin flex-shrink-0" />
                 <div className="text-left">
                   <p className="font-bold">
-                    Sending transaction {progress.current} of {progress.total}...
+                    Sending transaction {progress.current} of {progress.total}
+                    ...
                   </p>
                   <p className="text-xs text-[var(--muted)] mt-0.5">
                     Submitting to the Solana network
@@ -573,14 +792,43 @@ export function FundRecoveryFlow() {
               </p>
             </div>
           )}
-          <button
-            onClick={() => dispatch({ type: "RESET" })}
-            className="border-2 border-[var(--border)] bg-white px-6 py-3 font-bold shadow-brutal-sm transition-all cursor-pointer hover:bg-gray-50 active:shadow-none active:translate-x-[2px] active:translate-y-[2px]"
-          >
-            Start Over
-          </button>
+          <div className="flex items-center gap-3">
+            <button
+              onClick={handleBack}
+              className="border-2 border-[var(--border)] bg-white px-6 py-3 font-bold shadow-brutal-sm transition-all cursor-pointer hover:bg-gray-50 active:shadow-none active:translate-x-[2px] active:translate-y-[2px]"
+            >
+              Back to Selection
+            </button>
+            <button
+              onClick={() => {
+                fundingWalletRef.current = null;
+                clearWallets();
+                dispatch({ type: "RESET" });
+              }}
+              className="border-2 border-[var(--border)] bg-white px-6 py-3 font-bold shadow-brutal-sm transition-all cursor-pointer hover:bg-gray-50 active:shadow-none active:translate-x-[2px] active:translate-y-[2px]"
+            >
+              Start Over
+            </button>
+          </div>
         </div>
       )}
+
+      {/* Back button for steps without inline back */}
+      {canGoBack &&
+        state.step !== "CONNECT_FUNDING" &&
+        state.step !== "SELECT" &&
+        state.step !== "SIGN_FUNDING" &&
+        state.step !== "SWITCH_TO_COMPROMISED" &&
+        state.step !== "DONE" && (
+          <div className="flex justify-center">
+            <button
+              onClick={handleBack}
+              className="border-2 border-[var(--border)] bg-white px-5 py-2 font-semibold text-sm shadow-brutal-sm transition-all cursor-pointer hover:bg-gray-50 active:shadow-none active:translate-x-[1px] active:translate-y-[1px]"
+            >
+              Back
+            </button>
+          </div>
+        )}
     </div>
   );
 }

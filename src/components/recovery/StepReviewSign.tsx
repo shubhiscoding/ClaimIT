@@ -1,7 +1,7 @@
 "use client";
 
 import { useWallet } from "@solana/wallet-adapter-react";
-import { PublicKey, Transaction } from "@solana/web3.js";
+import { PublicKey, SendTransactionError, Transaction } from "@solana/web3.js";
 import type { Adapter, SignerWalletAdapter } from "@solana/wallet-adapter-base";
 import { useState, useCallback } from "react";
 import { TokenAccountInfo } from "@/hooks/useAllTokenAccounts";
@@ -94,6 +94,7 @@ export function StepReviewSign({
         setProgress({ current: i + 1, total: signedTxs.length });
 
         try {
+          console.log(signedTxs[i].serialize().toString('base64'));
           const signature = await sendTransaction(
             signedTxs[i],
             connection
@@ -120,6 +121,11 @@ export function StepReviewSign({
         } catch (err) {
           console.log("Transaction failed:", err);
           failed++;
+          console.error("Unexpected error:", error);
+          if(err instanceof SendTransactionError){
+            const logs = await err.getLogs(connection);
+            console.error("Transaction failed with logs:", logs);
+          }
         }
       }
 

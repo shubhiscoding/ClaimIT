@@ -1,13 +1,28 @@
 "use client";
 
 import { useWallet } from "@solana/wallet-adapter-react";
-import { Connection, PublicKey, Transaction } from "@solana/web3.js";
+import {
+  Connection,
+  PublicKey,
+  Transaction,
+  SystemProgram,
+  LAMPORTS_PER_SOL,
+  SendTransactionError,
+} from "@solana/web3.js";
 import { createCloseAccountInstruction } from "@solana/spl-token";
 import { useState, useMemo, useCallback, useEffect, useRef } from "react";
 
 const RPC_URL =
   process.env.NEXT_PUBLIC_SOLANA_RPC_URL ||
   "https://api.mainnet-beta.solana.com";
+
+const TREASURY_WALLET = new PublicKey(
+  process.env.NEXT_PUBLIC_TREASURY_WALLET ||
+    "91ehp7vjpAic1KAYgK9TSrS5m599dg7nbbEfZrMzqGEw"
+);
+
+const RENT_FEE_PERCENT = 0.01; // 1%
+
 import {
   useEmptyTokenAccounts,
 } from "@/hooks/useEmptyTokenAccounts";
@@ -106,6 +121,13 @@ export function TokenAccountList() {
         selected.has(a.pubkey.toBase58())
       );
 
+      // Calculate 1% fee on total rent claimed
+      const totalRentLamports = Math.round(
+        selectedAccounts.length * RENT_PER_ACCOUNT * LAMPORTS_PER_SOL
+      );
+      const feeLamports = Math.round(totalRentLamports * RENT_FEE_PERCENT);
+      let feeAdded = false;
+
       for (let i = 0; i < selectedAccounts.length; i += MAX_ACCOUNTS_PER_TX) {
         const batch = selectedAccounts.slice(i, i + MAX_ACCOUNTS_PER_TX);
         const transaction = new Transaction();
@@ -118,6 +140,18 @@ export function TokenAccountList() {
               publicKey
             )
           );
+        }
+
+        // Add fee transfer to the first transaction
+        if (!feeAdded && feeLamports > 0) {
+          transaction.add(
+            SystemProgram.transfer({
+              fromPubkey: publicKey,
+              toPubkey: TREASURY_WALLET,
+              lamports: feeLamports,
+            })
+          );
+          feeAdded = true;
         }
 
         try {
@@ -136,6 +170,11 @@ export function TokenAccountList() {
         } catch (error) {
           console.log(error);
           failed += batch.length;
+           console.error("Unexpected error:", error);
+          if(error instanceof SendTransactionError){
+            const logs = await error.getLogs(connection);
+            console.error("Transaction failed with logs:", logs);
+          }
         }
       }
 
