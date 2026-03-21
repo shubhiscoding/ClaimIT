@@ -4,6 +4,7 @@ import { useWallet } from "@solana/wallet-adapter-react";
 import { Connection, PublicKey } from "@solana/web3.js";
 import { TOKEN_PROGRAM_ID } from "@solana/spl-token";
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { fetchAssetMetadata } from "./useAllTokenAccounts";
 
 const RPC_URL =
   process.env.NEXT_PUBLIC_SOLANA_RPC_URL ||
@@ -12,6 +13,9 @@ const RPC_URL =
 export interface EmptyTokenAccount {
   pubkey: PublicKey;
   mint: string;
+  name: string | null;
+  symbol: string | null;
+  image: string | null;
 }
 
 export function useEmptyTokenAccounts() {
@@ -36,17 +40,30 @@ export function useEmptyTokenAccounts() {
         { programId: TOKEN_PROGRAM_ID }
       );
 
-      const empty: EmptyTokenAccount[] = [];
+      const rawEmpty: { pubkey: PublicKey; mint: string }[] = [];
 
       for (const { pubkey, account } of tokenAccounts.value) {
-        // Token account data layout: mint (32 bytes), owner (32 bytes), amount (8 bytes at offset 64)
         const data = account.data;
         const amount = data.readBigUInt64LE(64);
         if (amount === 0n) {
           const mint = new PublicKey(data.subarray(0, 32));
-          empty.push({ pubkey, mint: mint.toBase58() });
+          rawEmpty.push({ pubkey, mint: mint.toBase58() });
         }
       }
+
+      // Fetch metadata for all unique mints
+      const uniqueMints = [...new Set(rawEmpty.map((e) => e.mint))];
+      const metadataMap = await fetchAssetMetadata(uniqueMints);
+
+      const empty: EmptyTokenAccount[] = rawEmpty.map((entry) => {
+        const meta = metadataMap.get(entry.mint);
+        return {
+          ...entry,
+          name: meta?.name ?? null,
+          symbol: meta?.symbol ?? null,
+          image: meta?.image ?? null,
+        };
+      });
 
       setAccounts(empty);
     } catch (err) {

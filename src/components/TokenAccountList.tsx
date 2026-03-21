@@ -30,6 +30,43 @@ import {
 const RENT_PER_ACCOUNT = 0.00203928;
 const MAX_ACCOUNTS_PER_TX = 20;
 
+function CopyMint({ mint }: { mint: string }) {
+  const [copied, setCopied] = useState(false);
+  const short = mint.slice(0, 4) + "..." + mint.slice(-4);
+
+  return (
+    <button
+      onClick={(e) => {
+        e.stopPropagation();
+        navigator.clipboard.writeText(mint);
+        setCopied(true);
+        setTimeout(() => setCopied(false), 1500);
+      }}
+      className="flex items-center gap-1 text-[10px] font-mono text-[var(--muted)] hover:text-[var(--fg)] transition-colors cursor-pointer flex-shrink-0"
+      title={mint}
+    >
+      {short}
+      <svg
+        className="w-2.5 h-2.5"
+        fill="none"
+        viewBox="0 0 24 24"
+        stroke="currentColor"
+        strokeWidth={2}
+      >
+        {copied ? (
+          <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+        ) : (
+          <path
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"
+          />
+        )}
+      </svg>
+    </button>
+  );
+}
+
 export function TokenAccountList() {
   const { publicKey, sendTransaction } = useWallet();
   const connection = useMemo(() => new Connection(RPC_URL, "confirmed"), []);
@@ -384,11 +421,25 @@ export function TokenAccountList() {
                 )}
               </div>
 
+              {/* Token image */}
+              {account.image && (
+                <img
+                  src={account.image}
+                  alt={account.name ?? "token"}
+                  className="w-9 h-9 border-2 border-[var(--border)] object-cover flex-shrink-0"
+                />
+              )}
+
               {/* Account info */}
               <div className="flex-1 min-w-0">
-                <p className="font-mono text-sm truncate font-medium">{key}</p>
-                <p className="text-xs text-[var(--muted)] mt-1">
-                  Mint: {account.mint.slice(0, 8)}...{account.mint.slice(-8)}
+                <div className="flex items-center gap-2">
+                  <p className="font-bold text-sm truncate">
+                    {account.name ?? account.symbol ?? "Unknown Token"}
+                  </p>
+                  <CopyMint mint={account.mint} />
+                </div>
+                <p className="font-mono text-xs text-[var(--muted)] mt-1 truncate">
+                  {key}
                 </p>
               </div>
 

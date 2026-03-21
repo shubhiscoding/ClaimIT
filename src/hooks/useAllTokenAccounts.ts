@@ -37,7 +37,7 @@ interface HeliusAsset {
   };
 }
 
-async function fetchAssetMetadata(
+export async function fetchAssetMetadata(
   mints: string[]
 ): Promise<Map<string, { name: string | null; symbol: string | null; image: string | null }>> {
   const metadataMap = new Map<string, { name: string | null; symbol: string | null; image: string | null }>();
