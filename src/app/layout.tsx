@@ -20,7 +20,7 @@ export default function RootLayout({
         <SolanaProvider>
           <Header />
           <main className="flex-1 pb-10">{children}</main>
-          <footer className="fixed bottom-0 left-0 right-0 z-50 border-t-3 border-[var(--border)] bg-white px-6 py-2.5 flex items-center justify-between text-xs text-[var(--muted)]">
+          <footer className="fixed bottom-0 left-0 right-0 z-50 border-t-3 border-[var(--border)] bg-white px-6 py-2.5 flex items-center justify-between text-sm text-[var(--muted)]">
             <div>
               {process.env.NEXT_PUBLIC_DEMO_VIDEO_URL && (
                 <a
