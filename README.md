@@ -56,6 +56,12 @@ The compromised wallet is connected first — this means you only need to switch
 
 ---
 
+## DEMO
+
+https://github.com/user-attachments/assets/6d2a1bd6-ba8e-458d-9d26-04b3983a5d67
+
+---
+
 ## Getting Started
 
 ### Prerequisites
