@@ -1,4 +1,30 @@
+# dependencies
 node_modules
-.claude
+
+# next.js
 .next
+next-env.d.ts
+
+# build
+tsconfig.tsbuildinfo
+
+# env
 .env
+.env.local
+.env.*.local
+
+# claude
+.claude
+
+# editor
+.vscode
+.idea
+*.swp
+*.swo
+
+# os
+.DS_Store
+Thumbs.db
+
+# debug
+npm-debug.log*
